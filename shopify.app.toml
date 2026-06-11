@@ -1,0 +1,135 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "bc522a805e89ec0e2cd9368f3459f441"
+application_url = "https://example.com"
+embedded = true
+name = "checkout-gwp-jp-app"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "write_products,write_metaobjects,write_metaobject_definitions"
+
+[product.metafields.app.demo_info]
+type = "single_line_text_field"
+name = "Demo Source Info"
+description = "Tracks products created by the Shopify app template for development"
+
+  [product.metafields.app.demo_info.access]
+  admin = "merchant_read_write"
+
+[metaobjects.app.example]
+name = "Example"
+description = "An example metaobject definition created by this template"
+
+  [metaobjects.app.example.access]
+  admin = "merchant_read_write"
+
+[metaobjects.app.example.fields.title]
+name = "Title"
+type = "single_line_text_field"
+required = true
+
+[metaobjects.app.example.fields.description]
+name = "Description"
+type = "multi_line_text_field"
+
+
+[metaobjects.app.gwp]
+name = "GWP"
+description = "Gift with purchase campaign"
+
+  [metaobjects.app.gwp.access]
+  admin = "merchant_read_write"
+  storefront = "public_read" 
+
+  [metaobjects.app.gwp.capabilities]
+  publishable = true
+
+  [metaobjects.app.gwp.fields.title]
+  name = "Title"
+  type = "single_line_text_field"
+  required = true
+
+  [metaobjects.app.gwp.fields.condition_type]
+  name = "Condition Type"
+  type = "list.single_line_text_field"
+  required = true
+
+  [metaobjects.app.gwp.fields.condition_type.validations]
+  choices = ["amount", "product", "collection"]
+
+  [metaobjects.app.gwp.fields.start_datetime]
+  name = "Start Datetime"
+  type = "date_time"
+
+  [metaobjects.app.gwp.fields.end_datetime]
+  name = "End Datetime"
+  type = "date_time"
+
+  [metaobjects.app.gwp.fields.conditions]
+  name = "Conditions"
+  type = "list.metaobject_reference"
+  required = true
+
+    [metaobjects.app.gwp.fields.conditions.validations]
+    metaobject_definition_type = "$app:gwp_condition"
+
+[metaobjects.app.gwp_condition]
+name = "GWP Condition"
+description = "Gift with purchase condition"
+
+  [metaobjects.app.gwp_condition.access]
+  admin = "merchant_read_write"
+  storefront = "public_read" 
+
+  [metaobjects.app.gwp_condition.fields.condition_title]
+  name = "Condition Title"
+  type = "single_line_text_field"
+  required = true
+
+  [metaobjects.app.gwp_condition.fields.threshold_amount]
+  name = "Threshold Amount"
+  type = "number_integer"
+
+  [metaobjects.app.gwp_condition.fields.product]
+  name = "Product"
+  type = "product_reference"
+
+  [metaobjects.app.gwp_condition.fields.product_quantity]
+  name = "Product Quantity"
+  type = "number_integer"
+
+  [metaobjects.app.gwp_condition.fields.collection]
+  name = "Collection"
+  type = "collection_reference"
+
+  [metaobjects.app.gwp_condition.fields.collection_only]
+  name = "Collection Only"
+  type = "boolean"
+
+  [metaobjects.app.gwp_condition.fields.collection_quantity]
+  name = "Collection Quantity"
+  type = "number_integer"
+
+  [metaobjects.app.gwp_condition.fields.gift_product]
+  name = "Gift Product"
+  type = "product_reference"
+  required = true
+
+
+[webhooks]
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+[auth]
+redirect_urls = [ "https://example.com/api/auth" ]
+
+[build]
+automatically_update_urls_on_dev = true

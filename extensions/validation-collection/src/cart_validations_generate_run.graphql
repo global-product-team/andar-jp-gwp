@@ -1,0 +1,52 @@
+query runInput {
+  buyerJourney {
+    step
+  }
+  cart {
+    cost {
+      totalAmount {
+        amount
+        currencyCode
+      }
+    }
+    lines {
+      quantity
+      cost {
+        totalAmount {
+          amount
+          currencyCode
+        }
+      }
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          product {
+            id
+            inCollections(ids: [ "gid://shopify/Collection/491095523574"]) {
+              collectionId
+              isMember
+            }
+          }
+        }
+      }
+    }
+  }
+  shop {
+    metaobject(
+      handle: {
+        type: "app--379210334209--gwp"
+        handle: "app--379210334209--gwp-usymljaq"
+      }
+    ) {
+      condition_type: field(key: "condition_type") {
+        value
+      }
+    }
+    localTime {
+      isCampaignPeriod: dateTimeBetween(
+        startDateTime: "2026-06-11T09:30:00"
+        endDateTime: "2026-06-16T23:59:59"
+      )
+    }
+  }
+}
