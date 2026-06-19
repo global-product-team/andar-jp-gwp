@@ -9,6 +9,14 @@ const GWP_CONDITIONS = [
     collectionOnly: true,
     giftProductId: "gid://shopify/Product/9409886978294",
   },
+  {
+    currencyCode: "JPY",
+    thresholdAmount: 190000,
+    collectionId: "gid://shopify/Collection/485328355574",
+    collectionQuantity: 1,
+    collectionOnly: true,
+    giftProductId: "gid://shopify/Product/9310600069366",
+  },
 ];
 
 const ERROR_MESSAGE = "決済前に、プレゼントを[Add]で追加してください。";
