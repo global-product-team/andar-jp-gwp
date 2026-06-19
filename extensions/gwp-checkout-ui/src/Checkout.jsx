@@ -19,14 +19,16 @@ function Extension() {
   const cartLines = useCartLines();
   const total = useTotalAmount();
   const instructions = useInstructions();
+  const isRemovingRef = useRef(false);
+  const isNormalizingGiftQtyRef = useRef(false);
+  const isAddingRef = useRef(false);
 
   const [gwp, setGwp] = useState(null);
   const [loading, setLoading] = useState(true);
   const [collectionsLoading, setCollectionsLoading] = useState(false);
   const [productsWithCollections, setProductsWithCollections] = useState([]);
   const [selectedVariants, setSelectedVariants] = useState({});
-  const isRemovingRef = useRef(false);
-  const isNormalizingGiftQtyRef = useRef(false);
+  const [isAdding, setIsAdding] = useState(false);
 
   // const [debugInfo, setDebugInfo] = useState("");
 
@@ -98,7 +100,7 @@ function Extension() {
 
         const product = productsWithCollections.find((p) => p.id === productId);
         const hasCollection = product?.collections?.nodes?.some(
-          (c) => c.id === condition.collection.id
+          (collection) => collection.id === condition.collection.id
         );
 
         if (!hasCollection) return sum;
@@ -119,7 +121,7 @@ function Extension() {
 
       const product = productsWithCollections.find((p) => p.id === productId);
       const hasCollection = product?.collections?.nodes?.some(
-        (c) => c.id === condition.collection.id
+        (collection) => collection.id === condition.collection.id
       );
 
       return hasCollection ? sum + quantity : sum;
@@ -189,7 +191,7 @@ function Extension() {
     }
   }, [targetProduct, targetVariantId]);
 
-  // 조건 미달 / 잘못된 gift 자동 제거
+  // 잘못된 tier의 gift 자동 제거
   useEffect(() => {
     async function syncGiftTier() {
       if (isRemovingRef.current) return;
@@ -510,12 +512,22 @@ function Extension() {
     return cartLines.some((line) => line.merchandise.id === variantId);
   }
 
-  async function addToCart(variantId) {
-    await shopify.applyCartLinesChange({
-      type: "addCartLine",
-      merchandiseId: variantId,
-      quantity: 1,
-    });
+   async function addToCart(variantId) {
+    if (isAddingRef.current) return;
+
+    isAddingRef.current = true;
+    setIsAdding(true);
+
+    try {
+      await shopify.applyCartLinesChange({
+        type: "addCartLine",
+        merchandiseId: variantId,
+        quantity: 1,
+      });
+    } finally {
+      isAddingRef.current = false;
+      setIsAdding(false);
+    }
   }
 
   function handleVariantChange(productId, variantId) {
@@ -527,21 +539,7 @@ function Extension() {
   useBuyerJourneyIntercept(({ canBlockProgress }) => {
     if (!canBlockProgress) return { behavior: "allow" };
     if (loading || collectionsLoading) return { behavior: "allow" };
-    if (!eligibleCondition) {
-      const hasGift = cartLines.some((line) =>
-        isGiftProduct(line?.merchandise?.product?.id)
-      );
-
-      if (hasGift) {
-        return {
-          behavior: "block",
-          reason:
-            "カート内容が変更されたため、一度カートへ戻って再度チェックアウトをお試しください。",
-        };
-      }
-
-      return { behavior: "allow" };
-    }
+    if (!eligibleCondition) return { behavior: "allow" };
 
     const hasGwp = cartLines.some(
       (line) => line?.merchandise?.product?.id === targetProductId
@@ -565,40 +563,6 @@ function Extension() {
         <s-stack direction="inline" gap="small-100" alignItems="center">
           <s-spinner />
           <s-text>Loading gift…</s-text>
-        </s-stack>
-      </s-box>
-    );
-  }
-
-  const hasGiftInCart = cartLines.some((line) =>
-    isGiftProduct(line?.merchandise?.product?.id)
-  );
-
-  const hasAmountCondition = conditionTypes.includes("amount");
-
-  const isBelowAllAmountThresholds =
-    hasAmountCondition &&
-    conditions.length > 0 &&
-    conditions.every(
-      (condition) =>
-        totalAmount < Number(condition.thresholdAmount || 0)
-    );
-
-  const shouldShowCartReturnNotice =
-    hasGiftInCart && isBelowAllAmountThresholds;
-
-  if (shouldShowCartReturnNotice) {
-    return (
-      <s-box background="subdued" borderRadius="base" borderWidth="base" padding="base">
-        <s-stack gap="small-100">
-          <s-text>
-            カート内容が変更されたため、プレゼント条件を満たしていません。
-            一度カートへ戻り、再度チェックアウトをお試しください。
-          </s-text>
-
-          <s-link href="https://andar-jp.com/cart">
-            カートへ戻る
-          </s-link>
         </s-stack>
       </s-box>
     );
@@ -667,6 +631,7 @@ function Extension() {
                 <s-button
                   size="small"
                   disabled={
+                    isAdding ||
                     !selectedVariant?.availableForSale ||
                     !instructions?.lines?.canAddCartLine
                   }
