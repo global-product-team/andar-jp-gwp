@@ -1,0 +1,17 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "t:name"
+handle = "temp-gift-validation"
+type = "function"
+uid = "da67d49f-759b-5d3d-3688-75d2ed34332cec0f1dae"
+description = "t:description"
+
+  [[extensions.targeting]]
+  target = "cart.validations.generate.run"
+  input_query = "src/cart_validations_generate_run.graphql"
+  export = "cart-validations-generate-run"
+
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"
