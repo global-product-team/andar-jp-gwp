@@ -36,26 +36,17 @@ query CartValidationsGenerateRunInput {
       }
     }
     lines {
+      quantity
       cost {
         totalAmount {
           amount
         }
       }
-      quantity
       merchandise {
         __typename
         ... on ProductVariant {
           product {
             id
-            inCollections(
-              ids: [
-                "gid://shopify/Collection/485328355574"
-                "gid://shopify/Collection/492844744950"
-              ]
-            ) {
-              collectionId
-              isMember
-            }
           }
         }
       }

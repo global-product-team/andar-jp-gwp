@@ -14,6 +14,7 @@ export default function extension() {
 
 const GWP_HANDLE = "app--379210334209--gwp-usymljaq";
 const GWP_TYPE = "app--379210334209--gwp";
+const EGIFT_PRODUCT_ID = ""; // 추후 GIFT 상품 생기면 적용
 
 function Extension() {
   const cartLines = useCartLines();
@@ -22,7 +23,7 @@ function Extension() {
   const isRemovingRef = useRef(false);
   const isNormalizingGiftQtyRef = useRef(false);
   const isAddingRef = useRef(false);
-
+  
   const [gwp, setGwp] = useState(null);
   const [loading, setLoading] = useState(true);
   const [collectionsLoading, setCollectionsLoading] = useState(false);
@@ -32,7 +33,18 @@ function Extension() {
 
   // const [debugInfo, setDebugInfo] = useState("");
 
-  const totalAmount = Number(total?.amount ?? 0);
+  const totalAmount = useMemo(() => {
+    // eGift 상품은 여전히 조건 금액에서 제외
+    const egiftAmount = cartLines.reduce((sum, line) => {
+      if (line?.merchandise?.product?.id === EGIFT_PRODUCT_ID) {
+        return sum + Number(line?.cost?.totalAmount?.amount || 0);
+      }
+      return sum;
+    }, 0);
+
+    // 배송비 + 할인 반영된 최종 결제 총액 - eGift 금액
+    return Number(total?.amount || 0) - egiftAmount;
+  }, [cartLines, total]);
   const currencyCode = "JPY";
 
   const productIds = useMemo(() => {
@@ -74,8 +86,12 @@ function Extension() {
   // ── 조건 평가 함수 ──────────────────────────────────────────
 
   function isAmountConditionMatched(condition) {
-    // collection_only가 true면 amount 조건은 isCollectionConditionMatched에서 처리
+    if (!conditionTypes.includes("amount")) return true;
+
+    if (condition.currencyCode !== currencyCode) return false;
+
     if (condition.collectionOnly) return true;
+
     return totalAmount >= Number(condition.thresholdAmount || 0);
   }
 
@@ -92,42 +108,37 @@ function Extension() {
   function isCollectionConditionMatched(condition) {
     if (!condition.collection?.id) return false;
 
-    // collection_only가 true면 해당 컬렉션 상품 금액 합산으로 체크
+    const collectionLines = cartLines.filter((line) => {
+      const productId = line?.merchandise?.product?.id;
+
+      if (isGiftProduct(productId)) return false;
+      if (productId === EGIFT_PRODUCT_ID) return false;
+
+      const product = productsWithCollections.find((p) => p.id === productId);
+      return product?.collections?.nodes?.some(
+        (collection) => collection.id === condition.collection.id
+      );
+    });
+
+    const collectionQuantity = collectionLines.reduce((sum, line) => {
+      return sum + Number(line.quantity || 0);
+    }, 0);
+
+    if (collectionQuantity < Number(condition.collectionQuantity || 1)) {
+      return false;
+    }
+
     if (condition.collectionOnly) {
-      const collectionAmount = cartLines.reduce((sum, line) => {
-        const productId = line?.merchandise?.product?.id;
-        if (isGiftProduct(productId)) return sum;
+      if (condition.currencyCode !== currencyCode) return false;
 
-        const product = productsWithCollections.find((p) => p.id === productId);
-        const hasCollection = product?.collections?.nodes?.some(
-          (collection) => collection.id === condition.collection.id
-        );
-
-        if (!hasCollection) return sum;
-
-        const linePrice = Number(line?.cost?.totalAmount?.amount || 0);
-        return sum + linePrice;
+      const collectionAmount = collectionLines.reduce((sum, line) => {
+        return sum + Number(line?.cost?.totalAmount?.amount || 0);
       }, 0);
 
       return collectionAmount >= Number(condition.thresholdAmount || 0);
     }
 
-    // 기존 로직: 컬렉션 내 수량 체크
-    const collectionQuantity = cartLines.reduce((sum, line) => {
-      const productId = line?.merchandise?.product?.id;
-      const quantity = Number(line?.quantity || 0);
-
-      if (isGiftProduct(productId)) return sum;
-
-      const product = productsWithCollections.find((p) => p.id === productId);
-      const hasCollection = product?.collections?.nodes?.some(
-        (collection) => collection.id === condition.collection.id
-      );
-
-      return hasCollection ? sum + quantity : sum;
-    }, 0);
-
-    return collectionQuantity >= Number(condition.collectionQuantity || 1);
+    return true;
   }
 
   function isConditionMatched(condition) {
@@ -143,19 +154,68 @@ function Extension() {
 
   // ────────────────────────────────────────────────────────────
 
+
   const eligibleCondition = useMemo(() => {
     if (!gwp) return null;
     if (!conditionTypes.length) return null;
-    if (conditionTypes.includes("collection") && collectionsLoading) return null;
+
+    const hasCollectionCondition =
+      conditionTypes.includes("collection") ||
+      conditions.some((c) => c.collectionOnly);
+
+    if (hasCollectionCondition && collectionsLoading) return null;
     if (!isWithinCampaignPeriod(gwp.startDatetime, gwp.endDatetime)) return null;
 
     return (
       conditions
+        // Validation과 동일하게 현재 통화만 후보로 사용
+        .filter((condition) => {
+          if (conditionTypes.includes("amount")) {
+            return condition.currencyCode === currencyCode;
+          }
+          return true;
+        })
         .filter(isConditionMatched)
-        .sort((a, b) => Number(b.thresholdAmount || 0) - Number(a.thresholdAmount || 0))[0] ||
-      null
+        .sort((a, b) => {
+          if (conditionTypes.includes("amount")) {
+            const amountDiff =
+              Number(b.thresholdAmount || 0) -
+              Number(a.thresholdAmount || 0);
+
+            if (amountDiff !== 0) return amountDiff;
+
+            // 금액이 같으면 메타오브젝트 순서 유지
+            return 0;
+          }
+
+          if (conditionTypes.includes("product")) {
+            return (
+              Number(b.productQuantity || 1) -
+              Number(a.productQuantity || 1)
+            );
+          }
+
+          if (conditionTypes.includes("collection")) {
+            return (
+              Number(b.collectionQuantity || 1) -
+              Number(a.collectionQuantity || 1)
+            );
+          }
+
+          return 0;
+        })[0] || null
     );
-  }, [gwp, conditions, conditionTypes, totalAmount, currencyCode, cartLines, productsWithCollections, collectionsLoading, giftProductIds]);
+  }, [
+    gwp,
+    conditions,
+    conditionTypes,
+    totalAmount,
+    currencyCode,
+    cartLines,
+    productsWithCollections,
+    collectionsLoading,
+    giftProductIds,
+  ]);
 
   const targetProduct = eligibleCondition?.giftProduct || null;
   const targetProductId = targetProduct?.id || null;
@@ -170,12 +230,10 @@ function Extension() {
     return firstAvailableVariant?.id || null;
   }, [targetProduct]);
 
-  const targetProductLine = getCartLineByProductId(targetProductId);
-
-  function getCartLineByProductId(productId) {
-    if (!productId) return null;
-    return cartLines.find((line) => line?.merchandise?.product?.id === productId);
-  }
+  const targetGiftLine = cartLines.find((line) => {
+    const productId = line?.merchandise?.product?.id;
+    return productId === targetProductId && isGiftProduct(productId);
+  });
 
   function isGiftProduct(productId) {
     return giftProductIds.includes(productId);
@@ -194,42 +252,19 @@ function Extension() {
   // 잘못된 tier의 gift 자동 제거
   useEffect(() => {
     async function syncGiftTier() {
+      if (loading) return; 
       if (isRemovingRef.current) return;
-      if (loading) return;
-
-      const hasAmountCondition = conditionTypes.includes("amount");
-
-      const isBelowAllAmountThresholds =
-        hasAmountCondition &&
-        conditions.length > 0 &&
-        conditions.every(
-          (condition) =>
-            totalAmount < Number(condition.thresholdAmount || 0)
-        );
-
-      if (!isBelowAllAmountThresholds && collectionsLoading) return;
+      if (collectionsLoading) return;
+      if (!instructions?.lines?.canRemoveCartLine) return;
 
       const giftLines = cartLines.filter((line) =>
         isGiftProduct(line?.merchandise?.product?.id)
       );
 
-      if (!giftLines.length) return;
-
-      // 여기서 권한 체크
-      if (!instructions?.lines?.canRemoveCartLine) {
-        return;
-      }
-      
-      const eligibleGiftProductId = eligibleCondition?.giftProduct?.id || null;
-
-      const shouldRemoveAllGifts = isBelowAllAmountThresholds;
-
       const linesToRemove = giftLines.filter((line) => {
         const productId = line?.merchandise?.product?.id;
-
-        if (shouldRemoveAllGifts) return true;
-
-        return productId !== eligibleGiftProductId;
+        if (!targetProductId) return true;
+        return productId !== targetProductId;
       });
 
       if (!linesToRemove.length) return;
@@ -252,14 +287,7 @@ function Extension() {
     }
 
     syncGiftTier();
-  }, [
-    loading,
-    collectionsLoading,
-    cartLines,
-    giftProductIds,
-    eligibleCondition,
-    instructions,
-  ]);
+  }, [cartLines, giftProductIds, targetProductId, instructions, loading, collectionsLoading]);
 
   // gift 수량 1로 고정
   useEffect(() => {
@@ -294,7 +322,6 @@ function Extension() {
 
     normalizeGiftQuantity();
   }, [cartLines, giftProductIds, instructions]);
-
 
   // ── GWP 데이터 fetch ─────────────────────────────────────────
 
@@ -459,6 +486,7 @@ function Extension() {
       handle: metaobject.handle,
       conditionTitle: fields.condition_title,
       thresholdAmount: fields.threshold_amount,
+      currencyCode: "JPY",
       product: getReferenceByKey(metaobject.fields, "product"),
       productQuantity: fields.product_quantity,
       collection: getReferenceByKey(metaobject.fields, "collection"),
@@ -512,7 +540,7 @@ function Extension() {
     return cartLines.some((line) => line.merchandise.id === variantId);
   }
 
-   async function addToCart(variantId) {
+  async function addToCart(variantId) {
     if (isAddingRef.current) return;
 
     isAddingRef.current = true;
@@ -556,7 +584,6 @@ function Extension() {
   });
 
 
-
   if (loading || collectionsLoading) {
     return (
       <s-box background="subdued" borderRadius="base" borderWidth="base" padding="base">
@@ -570,7 +597,7 @@ function Extension() {
 
   if (!eligibleCondition) return null;
   if (!targetProduct) return null;
-  if (targetProductLine) return null;
+  if (targetGiftLine) return null;
 
   const variants = targetProduct.variants.nodes;
   const defaultVariant =
@@ -580,7 +607,6 @@ function Extension() {
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId);
 
   if (!selectedVariant) return null;
-
 
   return (
     <s-box background="subdued" borderRadius="base" borderWidth="base" padding="base">
@@ -637,7 +663,7 @@ function Extension() {
                   }
                   onClick={() => addToCart(selectedVariantId)}
                 >
-                  Add
+                  追加
                 </s-button>
               )}
             </s-grid>

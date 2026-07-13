@@ -2,9 +2,9 @@ api_version = "2026-04"
 
 [[extensions]]
 name = "t:name"
-handle = "temp-gift-validation"
+handle = "validation-product"
 type = "function"
-uid = "da67d49f-759b-5d3d-3688-75d2ed34332cec0f1dae"
+uid = "58f2e556-71de-9f20-31b8-253ed09179d635b1243e"
 description = "t:description"
 
   [[extensions.targeting]]
