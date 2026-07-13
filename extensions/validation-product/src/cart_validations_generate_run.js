@@ -3,31 +3,33 @@
 /**
  * 조건 설정값
  * conditionTypes는 메타오브젝트에서 읽어옴
- * collectionId, giftProductId는 하드코딩 유지
- * inCollections ids도 run.graphql에 동일하게 유지
+ * productId, giftProductId는 하드코딩 유지
  */
 
 const EGIFT_PRODUCT_ID = "";
 
 const GWP_CONDITIONS = [
   {
-    thresholdAmount: 20000,
-    collectionId: "gid://shopify/Collection/492844744950",
-    collectionQuantity: 1,
-    collectionOnly: true,
-    giftProductId: "gid://shopify/Product/8831087837430",
+    thresholdAmount: 300,
+    productId: "gid://shopify/Product/9969896194362",
+    productQuantity: 1,
+    giftProductId: "gid://shopify/Product/9586465866042",
   },
   {
-    thresholdAmount: 19000,
-    collectionId: "gid://shopify/Collection/485328355574",
-    collectionQuantity: 1,
-    collectionOnly: true,
-    giftProductId: "gid://shopify/Product/9033242575094",
+    thresholdAmount: 400,
+    productId: "gid://shopify/Product/9921523351866",
+    productQuantity: 2,
+    giftProductId: "gid://shopify/Product/10143139397946",
+  },
+  {
+    thresholdAmount: 500,
+    productId: "gid://shopify/Product/9921523351866",
+    productQuantity: 3,
+    giftProductId: "gid://shopify/Product/9969896358202",
   },
 ];
 
-const ERROR_MESSAGE = "決済前に、プレゼントを[Add]で追加してください。";
-  
+const ERROR_MESSAGE = "error product message.";
 
 export function cartValidationsGenerateRun(input) {
   const step = input.buyerJourney?.step;
@@ -37,15 +39,15 @@ export function cartValidationsGenerateRun(input) {
     return { operations: [{ validationAdd: { errors: [] } }] };
   }
 
-  // 테스트 고객만 validation 동작
-  const tagResults = input?.cart?.buyerIdentity?.customer?.hasTags ?? [];
-  const isTestCustomer = tagResults.some(
-    (tag) => tag?.tag === "gwp-test" && tag?.hasTag === true
-  );
+  // // 테스트 고객만 validation 동작
+  // const tagResults = input?.cart?.buyerIdentity?.customer?.hasTags ?? [];
+  // const isTestCustomer = tagResults.some(
+  //   (tag) => tag?.tag === "gwp-test" && tag?.hasTag === true
+  // );
 
-  if (!isTestCustomer) {
-    return { operations: [{ validationAdd: { errors: [] } }] };
-  }
+  // if (!isTestCustomer) {
+  //   return { operations: [{ validationAdd: { errors: [] } }] };
+  // }
 
   // ── 메타오브젝트에서 conditionTypes, 캠페인 기간 읽기 ────────
 
@@ -57,7 +59,7 @@ export function cartValidationsGenerateRun(input) {
 
   const conditionTypes = parseConditionTypes(metaobject?.condition_type?.value);
 
-  if (!conditionTypes.length) {
+  if (!conditionTypes.includes("product")) {
     return { operations: [{ validationAdd: { errors: [] } }] };
   }
 
@@ -81,65 +83,57 @@ export function cartValidationsGenerateRun(input) {
   }, 0);
 
   const totalAmount = cartTotalAmount - eGiftAmount;
-
   // ── eligible condition 찾기 ──────────────────────────────
 
-  const sortedConditions = [...GWP_CONDITIONS]
-    // .filter((c) => {
-    //   if (conditionTypes.includes("amount")) {
-    //     return c.currencyCode === currencyCode;
-    //   }
-    //   return true;
-    // })
-    .sort((a, b) => {
-      const amountDiff = (b.thresholdAmount || 0) - (a.thresholdAmount || 0);
+ const sortedConditions = [...GWP_CONDITIONS]
+  // .filter((condition) => {
+  //   if (conditionTypes.includes("amount")) {
+  //     return condition.currencyCode === currencyCode;
+  //   }
+
+  //   return true;
+  // })
+  .sort((a, b) => {
+    if (conditionTypes.includes("amount")) {
+      const amountDiff =
+        Number(b.thresholdAmount || 0) -
+        Number(a.thresholdAmount || 0);
+
       if (amountDiff !== 0) return amountDiff;
-      return (b.collectionQuantity || 0) - (a.collectionQuantity || 0);
-    });
+    }
+
+    const productDiff =
+      Number(b.productQuantity || 1) -
+      Number(a.productQuantity || 1);
+
+    if (productDiff !== 0) return productDiff;
+
+    return 0;
+  });
 
   const eligibleCondition = sortedConditions.find((condition) => {
+    // ── amount 조건 ──────────────────────────────────────
     const amountOk = (() => {
       if (!conditionTypes.includes("amount")) return true;
-      if (condition.collectionOnly) return true; // ← 추가
       return totalAmount >= (condition.thresholdAmount || 0);
     })();
 
-    if (!amountOk) return false; // ← 추가 (early return)
+    if (!amountOk) return false;
 
-    const collectionOk = (() => {
-      if (!conditionTypes.includes("collection")) return true;
-      if (!condition.collectionId) return false;
+    // ── product 수량 조건 ─────────────────────────────────
+    const productOk = (() => {
+      if (!condition.productId) return false;
 
-      const collectionLines = cartLines.filter((line) => {
-        if (line?.merchandise?.__typename !== "ProductVariant") return false;
-        if (line?.merchandise?.product?.id === EGIFT_PRODUCT_ID) return false;
-
-        const inCollections = line?.merchandise?.product?.inCollections || [];
-        return inCollections.some(
-          (c) => c.collectionId === condition.collectionId && c.isMember === true
-        );
-      });
-
-      const collectionQty = collectionLines.reduce((sum, line) => {
+      const productQty = cartLines.reduce((sum, line) => {
+        if (line?.merchandise?.__typename !== "ProductVariant") return sum;
+        if (line?.merchandise?.product?.id !== condition.productId) return sum;
         return sum + Number(line.quantity || 0);
       }, 0);
 
-      if (collectionQty < (condition.collectionQuantity || 1)) {
-        return false;
-      }
-
-      if (condition.collectionOnly) {
-        const collectionAmount = collectionLines.reduce((sum, line) => {
-          return sum + Number(line?.cost?.totalAmount?.amount || 0);
-        }, 0);
-
-        return collectionAmount >= (condition.thresholdAmount || 0);
-      }
-
-      return true;
+      return productQty >= (condition.productQuantity || 1);
     })();
 
-    return collectionOk; // ← amountOk는 위에서 이미 처리했으므로
+    return productOk;
   });
 
   if (!eligibleCondition) {
@@ -175,4 +169,3 @@ function parseConditionTypes(value) {
     return [value];
   }
 }
-

@@ -486,7 +486,7 @@ function Extension() {
       handle: metaobject.handle,
       conditionTitle: fields.condition_title,
       thresholdAmount: fields.threshold_amount,
-      currencyCode: fields.currency_code,
+      currencyCode: "JPY",
       product: getReferenceByKey(metaobject.fields, "product"),
       productQuantity: fields.product_quantity,
       collection: getReferenceByKey(metaobject.fields, "collection"),
@@ -613,10 +613,10 @@ function Extension() {
       <s-section>
         <s-stack gap="small-100">
           <s-text size="medium" emphasis="bold">
-            Select your free gift
+            プレゼントを選択
           </s-text>
 
-          <s-text>You are eligible for a free gift with this order.</s-text>
+          <s-text>特典のプレゼントが利用可能です。</s-text>
 
           <s-grid
             gridTemplateColumns="auto minmax(0, 1fr)"
@@ -663,7 +663,7 @@ function Extension() {
                   }
                   onClick={() => addToCart(selectedVariantId)}
                 >
-                  Add
+                  追加
                 </s-button>
               )}
             </s-grid>
