@@ -656,6 +656,7 @@ function Extension() {
               ) : (
                 <s-button
                   size="small"
+                  variant="primary"
                   disabled={
                     isAdding ||
                     !selectedVariant?.availableForSale ||

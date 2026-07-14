@@ -10,19 +10,19 @@ const EGIFT_PRODUCT_ID = "";
 
 const GWP_CONDITIONS = [
   {
-    thresholdAmount: 300,
+    thresholdAmount: 30000,
     productId: "gid://shopify/Product/9969896194362",
     productQuantity: 1,
     giftProductId: "gid://shopify/Product/9586465866042",
   },
   {
-    thresholdAmount: 400,
+    thresholdAmount: 40000,
     productId: "gid://shopify/Product/9921523351866",
     productQuantity: 2,
     giftProductId: "gid://shopify/Product/10143139397946",
   },
   {
-    thresholdAmount: 500,
+    thresholdAmount: 50000,
     productId: "gid://shopify/Product/9921523351866",
     productQuantity: 3,
     giftProductId: "gid://shopify/Product/9969896358202",
@@ -39,15 +39,15 @@ export function cartValidationsGenerateRun(input) {
     return { operations: [{ validationAdd: { errors: [] } }] };
   }
 
-  // // 테스트 고객만 validation 동작
-  // const tagResults = input?.cart?.buyerIdentity?.customer?.hasTags ?? [];
-  // const isTestCustomer = tagResults.some(
-  //   (tag) => tag?.tag === "gwp-test" && tag?.hasTag === true
-  // );
+  // 테스트 고객만 validation 동작
+  const tagResults = input?.cart?.buyerIdentity?.customer?.hasTags ?? [];
+  const isTestCustomer = tagResults.some(
+    (tag) => tag?.tag === "gwp-test" && tag?.hasTag === true
+  );
 
-  // if (!isTestCustomer) {
-  //   return { operations: [{ validationAdd: { errors: [] } }] };
-  // }
+  if (!isTestCustomer) {
+    return { operations: [{ validationAdd: { errors: [] } }] };
+  }
 
   // ── 메타오브젝트에서 conditionTypes, 캠페인 기간 읽기 ────────
 

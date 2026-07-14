@@ -1,6 +1,6 @@
 // @ts-check
 
-const EGIFT_PRODUCT_ID = "gid://shopify/Product/9726266376506";
+const EGIFT_PRODUCT_ID = "";
 
 const GWP_CONDITIONS = [
   {
@@ -25,15 +25,15 @@ export function cartValidationsGenerateRun(input) {
     return { operations: [{ validationAdd: { errors: [] } }] };
   }
 
-  // // 테스트 고객만 validation 동작
-  // const tagResults = input?.cart?.buyerIdentity?.customer?.hasTags ?? [];
-  // const isTestCustomer = tagResults.some(
-  //   (tag) => tag?.tag === "gwp-test" && tag?.hasTag === true
-  // );
+  // 테스트 고객만 validation 동작
+  const tagResults = input?.cart?.buyerIdentity?.customer?.hasTags ?? [];
+  const isTestCustomer = tagResults.some(
+    (tag) => tag?.tag === "gwp-test" && tag?.hasTag === true
+  );
 
-  // if (!isTestCustomer) {
-  //   return { operations: [{ validationAdd: { errors: [] } }] };
-  // }
+  if (!isTestCustomer) {
+    return { operations: [{ validationAdd: { errors: [] } }] };
+  }
 
   // ── 메타오브젝트에서 conditionTypes, 캠페인 기간 읽기 ────────
 

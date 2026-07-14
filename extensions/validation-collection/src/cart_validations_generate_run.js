@@ -20,8 +20,8 @@ const GWP_CONDITIONS = [
   {
     thresholdAmount: 19000,
     collectionId: "gid://shopify/Collection/485328355574",
-    collectionQuantity: 1,
-    collectionOnly: true,
+    collectionQuantity: 2,
+    collectionOnly: false,
     giftProductId: "gid://shopify/Product/9033242575094",
   },
 ];
@@ -82,6 +82,18 @@ export function cartValidationsGenerateRun(input) {
 
   const totalAmount = cartTotalAmount - eGiftAmount;
 
+  const originalCartAmount = cartLines.reduce((sum, line) => {
+    if (line?.merchandise?.__typename !== "ProductVariant") return sum;
+    if (line?.merchandise?.product?.id === EGIFT_PRODUCT_ID) return sum;
+
+    return sum + Number(line?.cost?.totalAmount?.amount || 0);
+  }, 0);
+
+  const discountRatio =
+    originalCartAmount > 0
+      ? Math.min(totalAmount / originalCartAmount, 1)
+      : 1;
+
   // ── eligible condition 찾기 ──────────────────────────────
 
   const sortedConditions = [...GWP_CONDITIONS]
@@ -129,9 +141,12 @@ export function cartValidationsGenerateRun(input) {
       }
 
       if (condition.collectionOnly) {
-        const collectionAmount = collectionLines.reduce((sum, line) => {
+        const originalCollectionAmount = collectionLines.reduce((sum, line) => {
           return sum + Number(line?.cost?.totalAmount?.amount || 0);
         }, 0);
+
+        const collectionAmount =
+          originalCollectionAmount * discountRatio;
 
         return collectionAmount >= (condition.thresholdAmount || 0);
       }
