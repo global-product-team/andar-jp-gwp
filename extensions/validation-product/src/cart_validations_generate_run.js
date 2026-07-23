@@ -10,26 +10,42 @@ const EGIFT_PRODUCT_ID = "";
 
 const GWP_CONDITIONS = [
   {
-    thresholdAmount: 30000,
-    productId: "gid://shopify/Product/9969896194362",
-    productQuantity: 1,
-    giftProductId: "gid://shopify/Product/9586465866042",
-  },
-  {
-    thresholdAmount: 40000,
-    productId: "gid://shopify/Product/9921523351866",
+    thresholdAmount: 20000,
+    productId: "gid://shopify/Product/9408368574710",
     productQuantity: 2,
-    giftProductId: "gid://shopify/Product/10143139397946",
+    giftProductId: "gid://shopify/Product/8831087837430",
   },
   {
-    thresholdAmount: 50000,
-    productId: "gid://shopify/Product/9921523351866",
+    thresholdAmount: 30000,
+    productId: "gid://shopify/Product/9430177612022",
     productQuantity: 3,
-    giftProductId: "gid://shopify/Product/9969896358202",
-  },
+    giftProductId: "gid://shopify/Product/9033242575094",
+  }
 ];
 
 const ERROR_MESSAGE = "error product message.";
+
+// quantity는 세트 구성품마다 항상 1이므로,
+// 같은 _bundle_group_id는 1건으로, 단품은 quantity 그대로 합산
+function getEffectiveQuantity(lines) {
+  const seenGroupIds = new Set();
+  let total = 0;
+
+  for (const line of lines) {
+    const groupId = line?.attribute?.value; // null이면 단품
+    if (groupId) {
+      if (!seenGroupIds.has(groupId)) {
+        seenGroupIds.add(groupId);
+        total += 1; // 세트 1개 = 1건
+      }
+      // 이미 카운트된 groupId면 스킵 (같은 세트의 다른 구성품)
+    } else {
+      total += Number(line.quantity || 0);
+    }
+  }
+
+  return total;
+}
 
 export function cartValidationsGenerateRun(input) {
   const step = input.buyerJourney?.step;

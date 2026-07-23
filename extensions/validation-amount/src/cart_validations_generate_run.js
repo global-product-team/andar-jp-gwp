@@ -4,18 +4,27 @@ const EGIFT_PRODUCT_ID = "";
 
 const GWP_CONDITIONS = [
   {
-    thresholdAmount: 150,
-    giftProductId: "gid://shopify/Product/9586465866042",
+    thresholdAmount: 15000,
+    giftProductId: "gid://shopify/Product/8831087837430",
   },
   {
-    thresholdAmount: 400,
-    giftProductId: "gid://shopify/Product/10143139397946",
+    thresholdAmount: 40000,
+    giftProductId: "gid://shopify/Product/9033242575094",
   },
  
 ];
 
 const ERROR_MESSAGE =
   "error amount message.";
+
+function getLineActualAmount(line) {
+  const subtotal = Number(line?.cost?.subtotalAmount?.amount || 0);
+  const discounted = (line?.discountAllocations || []).reduce(
+    (sum, d) => sum + Number(d?.discountedAmount?.amount || 0),
+    0
+  );
+  return subtotal - discounted;
+}
 
 export function cartValidationsGenerateRun(input) {
   const step = input.buyerJourney?.step;
@@ -66,7 +75,7 @@ export function cartValidationsGenerateRun(input) {
     if (line?.merchandise?.__typename !== "ProductVariant") return sum;
     if (line?.merchandise?.product?.id !== EGIFT_PRODUCT_ID) return sum;
 
-    return sum + Number(line?.cost?.totalAmount?.amount || 0);
+    return sum + getLineActualAmount(line); // 수정
   }, 0);
 
   const totalAmount = cartTotalAmount - eGiftAmount;

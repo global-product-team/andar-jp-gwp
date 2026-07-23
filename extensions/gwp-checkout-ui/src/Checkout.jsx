@@ -23,7 +23,24 @@ function Extension() {
   const isRemovingRef = useRef(false);
   const isNormalizingGiftQtyRef = useRef(false);
   const isAddingRef = useRef(false);
-  
+
+  useEffect(() => {
+    // console.log("[GWP DEBUG] line.cost raw", cartLines.map(l => l.cost));
+    // console.log("[GWP DEBUG] line 전체 구조 (첫번째 라인)", cartLines[0]);
+    // const sumOfLineTotals = cartLines.reduce(
+    //   (sum, l) => sum + Number(l?.cost?.totalAmount?.amount || 0),
+    //   0
+    // );
+    // console.log("[GWP DEBUG] 라인 totalAmount 합 vs 카트 total", {
+    //   sumOfLineTotals,
+    //   cartTotal: total?.amount, // useTotalAmount()
+    // });
+    console.log("[GWP DEBUG] cartLines", cartLines);
+    
+    
+  }, [cartLines, total]);
+ 
+
   const [gwp, setGwp] = useState(null);
   const [loading, setLoading] = useState(true);
   const [collectionsLoading, setCollectionsLoading] = useState(false);
@@ -34,17 +51,15 @@ function Extension() {
   // const [debugInfo, setDebugInfo] = useState("");
 
   const totalAmount = useMemo(() => {
-    // eGift 상품은 여전히 조건 금액에서 제외
     const egiftAmount = cartLines.reduce((sum, line) => {
       if (line?.merchandise?.product?.id === EGIFT_PRODUCT_ID) {
-        return sum + Number(line?.cost?.totalAmount?.amount || 0);
+        return sum + Number(line?.cost?.totalAmount?.amount || 0); // 원복
       }
       return sum;
     }, 0);
 
-    // 배송비 + 할인 반영된 최종 결제 총액 - eGift 금액
     return Number(total?.amount || 0) - egiftAmount;
-  }, [cartLines, total]);
+  }, [cartLines, total])
   const currencyCode = "JPY";
 
   const productIds = useMemo(() => {
@@ -95,12 +110,50 @@ function Extension() {
     return totalAmount >= Number(condition.thresholdAmount || 0);
   }
 
+  function getBundleGroupId(line) {
+    const attrs = line.attributes || [];
+
+    // // 1차: _bundle_group_id 필드 우선 사용 (있으면 그대로 신뢰)
+    // const directAttr = attrs.find((a) => a.key === "_bundle_group_id");
+    // if (directAttr?.value) return directAttr.value;
+
+    // 2차: 없으면 'Part of' 속성에서 (group xxxxx) 패턴 추출
+    const partOfAttr = attrs.find((a) => a.key === "Part of");
+    if (partOfAttr?.value) {
+      const match = partOfAttr.value.match(/\(group\s+([^\)]+)\)/);
+      if (match) return match[1].trim();
+    }
+
+    return null; // 세트 아님 (단품)
+  }
+
+  function getEffectiveQuantity(lines) {
+    const seenGroupIds = new Set();
+    let total = 0;
+
+    for (const line of lines) {
+      const groupId = getBundleGroupId(line); // 위 수정된 함수 사용
+      if (groupId) {
+        if (!seenGroupIds.has(groupId)) {
+          seenGroupIds.add(groupId);
+          total += 1;
+        }
+      } else {
+        total += Number(line.quantity || 0);
+      }
+    }
+
+    return total;
+  }
+
   function isProductConditionMatched(condition) {
     if (!condition.product?.id) return false;
 
-    const productQuantity = cartLines
-      .filter((line) => line?.merchandise?.product?.id === condition.product.id)
-      .reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+    const productLines = cartLines.filter(
+      (line) => line?.merchandise?.product?.id === condition.product.id
+    );
+
+    const productQuantity = getEffectiveQuantity(productLines);
 
     return productQuantity >= Number(condition.productQuantity || 1);
   }
@@ -119,10 +172,18 @@ function Extension() {
         (collection) => collection.id === condition.collection.id
       );
     });
+    console.log("[GWP DEBUG] collectionLines 상세", collectionLines.map(line => ({
+      productId: line?.merchandise?.product?.id,
+      quantity: line.quantity,
+      bundleGroupId: (line.attributes || []).find(a => a.key === "_bundle_group_id")?.value || null,
+    })));
+    console.log("[GWP DEBUG] collectionLines 필터 통과 라인", collectionLines.map(l => ({
+      productId: l?.merchandise?.product?.id,
+      quantity: l.quantity,
+      bundleGroupId: getBundleGroupId(l),
+    })));
 
-    const collectionQuantity = collectionLines.reduce((sum, line) => {
-      return sum + Number(line.quantity || 0);
-    }, 0);
+    const collectionQuantity = getEffectiveQuantity(collectionLines); // reduce 대체
 
     if (collectionQuantity < Number(condition.collectionQuantity || 1)) {
       return false;
@@ -166,45 +227,76 @@ function Extension() {
     if (hasCollectionCondition && collectionsLoading) return null;
     if (!isWithinCampaignPeriod(gwp.startDatetime, gwp.endDatetime)) return null;
 
-    return (
-      conditions
-        // Validation과 동일하게 현재 통화만 후보로 사용
-        .filter((condition) => {
-          if (conditionTypes.includes("amount")) {
-            return condition.currencyCode === currencyCode;
-          }
-          return true;
-        })
-        .filter(isConditionMatched)
-        .sort((a, b) => {
-          if (conditionTypes.includes("amount")) {
-            const amountDiff =
-              Number(b.thresholdAmount || 0) -
-              Number(a.thresholdAmount || 0);
+    const filtered = conditions.filter((condition) => {
+      if (conditionTypes.includes("amount")) {
+        return condition.currencyCode === currencyCode;
+      }
+      return true;
+    });
 
-            if (amountDiff !== 0) return amountDiff;
+    const matched = filtered.filter(isConditionMatched);
 
-            // 금액이 같으면 메타오브젝트 순서 유지
-            return 0;
-          }
+    const sorted = matched.sort((a, b) => {
+      if (conditionTypes.includes("amount")) {
+        const amountDiff =
+          Number(b.thresholdAmount || 0) - Number(a.thresholdAmount || 0);
 
-          if (conditionTypes.includes("product")) {
-            return (
-              Number(b.productQuantity || 1) -
-              Number(a.productQuantity || 1)
-            );
-          }
+        if (amountDiff !== 0) return amountDiff;
 
-          if (conditionTypes.includes("collection")) {
-            return (
-              Number(b.collectionQuantity || 1) -
-              Number(a.collectionQuantity || 1)
-            );
-          }
+        if (conditionTypes.includes("collection")) {
+          const collectionQtyDiff =
+            Number(b.collectionQuantity || 1) - Number(a.collectionQuantity || 1);
+          if (collectionQtyDiff !== 0) return collectionQtyDiff;
+        }
 
-          return 0;
-        })[0] || null
-    );
+        if (conditionTypes.includes("product")) {
+          const productQtyDiff =
+            Number(b.productQuantity || 1) - Number(a.productQuantity || 1);
+          if (productQtyDiff !== 0) return productQtyDiff;
+        }
+
+        return 0;
+      }
+
+      if (conditionTypes.includes("product")) {
+        return Number(b.productQuantity || 1) - Number(a.productQuantity || 1);
+      }
+
+      if (conditionTypes.includes("collection")) {
+        return (
+          Number(b.collectionQuantity || 1) - Number(a.collectionQuantity || 1)
+        );
+      }
+
+      return 0;
+    });
+
+    const result = sorted[0] || null;
+
+    // ── 디버그 로그 ──────────────────────────────────────────
+    console.log("[GWP DEBUG] eligibleCondition 계산 과정", {
+      totalAmount,
+      currencyCode,
+      conditionTypes,
+      allConditions: conditions.map((c) => ({
+        title: c.conditionTitle,
+        thresholdAmount: c.thresholdAmount,
+        collectionOnly: c.collectionOnly,
+        collectionId: c.collection?.id,
+        collectionQuantity: c.collectionQuantity,
+        currencyCode: c.currencyCode,
+      })),
+      afterCurrencyFilter: filtered.map((c) => c.conditionTitle),
+      afterConditionMatch: matched.map((c) => c.conditionTitle),
+      afterSort: sorted.map((c) => ({
+        title: c.conditionTitle,
+        thresholdAmount: c.thresholdAmount,
+      })),
+      selected: result?.conditionTitle,
+    });
+    // ────────────────────────────────────────────────────────
+
+    return result;
   }, [
     gwp,
     conditions,
