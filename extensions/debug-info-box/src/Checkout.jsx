@@ -248,6 +248,22 @@ function DebugExtension() {
     return total;
   }
 
+  function getBundleTitle(line) {
+    const attrs = line.attributes || [];
+    const partOfAttr = attrs.find((a) => a.key === "Part of");
+    if (!partOfAttr?.value) return null;
+
+    const match = partOfAttr.value.match(/Bundle\s+(.+?)\s*\(group\s+[^)]+\)\s*$/);
+    if (!match) return null;
+
+    // \u201C = " (왼쪽 스마트 따옴표), \u201D = " (오른쪽 스마트 따옴표)
+    // 일반 따옴표(", '), 전각 따옴표 등도 함께 커버
+    return match[1]
+      .replace(/^[\s\u201C\u201D\u2018\u2019"'ff]+/, "")
+      .replace(/[\s\u201C\u201D\u2018\u2019"'ff]+$/, "")
+      .trim();
+  }
+
   const conditionTypes = gwp?.conditionTypes || [];
   const conditions = gwp?.conditions || [];
 
@@ -267,19 +283,30 @@ function DebugExtension() {
   // ── 조건별 판정 (gwp-checkout-ui의 isConditionMatched 로직과 1:1 동기화) ──
   const conditionDebugRows = useMemo(() => {
     return conditions.map((condition) => {
-      // -- product 조건 --
-      const matchedProductQty = condition.product?.id
-        ? cartLines
-            .filter((line) => line?.merchandise?.product?.id === condition.product.id)
-            .reduce((sum, line) => sum + Number(line.quantity || 0), 0)
-        : 0;
+      // -- product 조건 (id 매칭 우선, 안 되면 번들 타이틀 폴백) --
+      const productLinesById = condition.product?.id
+        ? cartLines.filter((line) => line?.merchandise?.product?.id === condition.product.id)
+        : [];
+
+      const productLinesByBundleTitle = condition.product?.title
+        ? cartLines.filter((line) => {
+            const bundleTitle = getBundleTitle(line);
+            return bundleTitle && bundleTitle === condition.product.title;
+          })
+        : [];
+
+      const productLines = productLinesById.length
+        ? productLinesById
+        : productLinesByBundleTitle;
+
+      const matchedProductQty = getEffectiveQuantity(productLines); // reduce 대체
 
       const productOk =
         !conditionTypes.includes("product") ||
         (!!condition.product?.id &&
           matchedProductQty >= Number(condition.productQuantity || 1));
 
-      // -- collection 조건 (gift/eGift 제외 동기화) --
+      // -- collection 조건 (변경 없음, 기존 그대로) --
       const collectionLines = condition.collection?.id
         ? cartLines.filter((line) => {
             const productId = line?.merchandise?.product?.id;
@@ -314,7 +341,7 @@ function DebugExtension() {
         !conditionTypes.includes("collection") ||
         (collectionQtyOk && collectionAmountOk);
 
-      // -- amount 조건 --
+      // -- amount 조건 (변경 없음) --
       const amountOk =
         !conditionTypes.includes("amount") ||
         (condition.currencyCode === currencyCode &&

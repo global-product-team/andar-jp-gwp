@@ -146,14 +146,75 @@ function Extension() {
     return total;
   }
 
+  // ── 번들(세트) 상위 상품 타이틀 추출 ──────────────────────
+  function getBundleTitle(line) {
+    const attrs = line.attributes || [];
+    const partOfAttr = attrs.find((a) => a.key === "Part of");
+    if (!partOfAttr?.value) return null;
+
+    const match = partOfAttr.value.match(/Bundle\s+(.+?)\s*\(group\s+[^)]+\)\s*$/);
+    if (!match) return null;
+
+    // \u201C = " (왼쪽 스마트 따옴표), \u201D = " (오른쪽 스마트 따옴표)
+    // 일반 따옴표(", '), 전각 따옴표 등도 함께 커버
+    return match[1]
+      .replace(/^[\s\u201C\u201D\u2018\u2019"'ff]+/, "")
+      .replace(/[\s\u201C\u201D\u2018\u2019"'ff]+$/, "")
+      .trim();
+  }
+
   function isProductConditionMatched(condition) {
     if (!condition.product?.id) return false;
 
-    const productLines = cartLines.filter(
+    // 1차: product id 직접 매칭 (단품일 경우 이걸로 잡힘)
+    const productLinesById = cartLines.filter(
       (line) => line?.merchandise?.product?.id === condition.product.id
     );
 
+    // 2차: id 매칭이 없으면 번들 타이틀 텍스트로 폴백 매칭
+    const productLinesByBundleTitle = cartLines.filter((line) => {
+      const bundleTitle = getBundleTitle(line);
+      return bundleTitle && condition.product.title && bundleTitle === condition.product.title;
+    });
+
+    const productLines = productLinesById.length
+      ? productLinesById
+      : productLinesByBundleTitle;
+
     const productQuantity = getEffectiveQuantity(productLines);
+
+    console.log("[GWP DEBUG] 타이틀 매칭 확인", cartLines.map(line => {
+      const bundleTitle = getBundleTitle(line);
+      return {
+        productId: line?.merchandise?.product?.id,
+        bundleTitle,
+        bundleTitleLength: bundleTitle?.length,
+      };
+    }).filter(item => item.bundleTitle)); // 번들인 라인만
+
+    console.log("[GWP DEBUG] condition.product 정보", conditions.map(c => ({
+      conditionTitle: c.conditionTitle,
+      productId: c.product?.id,
+      productTitle: c.product?.title,
+      productTitleLength: c.product?.title?.length,
+    })));
+
+    const bundleLine = cartLines.find(l => (l.attributes || []).some(a => a.key === "Part of"));
+    const bundleTitle = getBundleTitle(bundleLine);
+    const conditionTitle = conditions[0]?.product?.title;
+    console.log("[GWP DEBUG] 정확한 문자열 비교", {
+      bundleTitle: JSON.stringify(bundleTitle),
+      conditionTitle: JSON.stringify(conditionTitle),
+      isEqual: bundleTitle === conditionTitle,
+      bundleTitleLength: bundleTitle?.length,
+      conditionTitleLength: conditionTitle?.length,
+    });
+
+    if (bundleLine) {
+      const partOfAttr = bundleLine.attributes.find(a => a.key === "Part of");
+      console.log("[GWP DEBUG] 실제 Part of 원본값 (JSON)", JSON.stringify(partOfAttr.value));
+      console.log("[GWP DEBUG] getBundleTitle 함수 직접 호출 결과", getBundleTitle(bundleLine));
+    }
 
     return productQuantity >= Number(condition.productQuantity || 1);
   }

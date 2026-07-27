@@ -105,11 +105,9 @@ function Extension() {
 
         const collectionLines = cartLines.filter((line) => {
           const productId = line?.merchandise?.product?.id;
-
           if (!productId) return false;
           if (productId === EGIFT_PRODUCT_ID) return false;
           if (giftProductIds.includes(productId)) return false;
-
           const product = productsWithCollections.find((item) => item.id === productId);
           return product?.collections?.nodes?.some(
             (collection) => collection.id === condition.collection.id
@@ -119,19 +117,32 @@ function Extension() {
         const collectionQuantity = getEffectiveQuantity(collectionLines);
         const requiredQuantity = Number(condition.collectionQuantity || 1);
 
-        if (collectionQuantity < requiredQuantity) return null; // 수량 미달이면 후보 아님
-
         const currentAmount = collectionLines.reduce(
           (sum, line) => sum + Number(line?.cost?.totalAmount?.amount || 0),
           0
-        ); // 실제(할인 다 반영된) 컬렉션 합계
+        );
 
         const thresholdAmount = Number(condition.thresholdAmount || 0);
-
-        if (currentAmount >= thresholdAmount) return null; // 이미 충족이면 후보 아님
-
-        // 핵심: 카트 총액만 보면 충족처럼 보이는 경우에만 노출
         const looksMatchedByCartTotal = cartTotalAmount >= thresholdAmount;
+
+        // ↓↓↓ 디버그 로그 (조건마다 각 단계 결과 확인)
+        console.log("[GWP BANNER DEBUG]", {
+          conditionTitle: condition.conditionTitle,
+          collectionOnly: condition.collectionOnly,
+          collectionId: condition.collection?.id,
+          currencyCode: condition.currencyCode,
+          collectionQuantity,
+          requiredQuantity,
+          qtyOk: collectionQuantity >= requiredQuantity,
+          currentAmount,
+          thresholdAmount,
+          amountAlreadyMatched: currentAmount >= thresholdAmount,
+          cartTotalAmount,
+          looksMatchedByCartTotal,
+        });
+
+        if (collectionQuantity < requiredQuantity) return null;
+        if (currentAmount >= thresholdAmount) return null;
         if (!looksMatchedByCartTotal) return null;
 
         return {
@@ -144,14 +155,7 @@ function Extension() {
         };
       })
       .filter(Boolean);
-  }, [
-    conditions,
-    conditionTypes,
-    cartLines,
-    productsWithCollections,
-    giftProductIds,
-    cartTotalAmount,
-  ]);
+  }, [conditions, conditionTypes, cartLines, productsWithCollections, giftProductIds, cartTotalAmount]);
 
   const activeWarningInfo = useMemo(() => {
     if (!warningConditionInfos.length) return null;
@@ -162,9 +166,259 @@ function Extension() {
     )[0];
   }, [warningConditionInfos]);
 
-  // ── fetchGwp, fetchProductCollections, parseGwp, parseCondition,
-  //     parseConditionTypes, getFieldsMap, getReferenceByKey,
-  //     isWithinCampaignPeriod, formatMoney 는 기존과 동일하게 유지 ──
+  async function fetchGwp() {
+    const query = `
+      query getGwp($handle: MetaobjectHandleInput!) {
+        metaobject(handle: $handle) {
+          id
+          handle
+
+          fields {
+            key
+            value
+
+            reference {
+              ... on Product {
+                id
+                title
+              }
+
+              ... on Collection {
+                id
+                title
+                handle
+              }
+            }
+
+            references(first: 20) {
+              nodes {
+                ... on Metaobject {
+                  id
+                  handle
+
+                  fields {
+                    key
+                    value
+
+                    reference {
+                      ... on Product {
+                        id
+                        title
+                      }
+
+                      ... on Collection {
+                        id
+                        title
+                        handle
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    try {
+      const result = await shopify.query(query, {
+        variables: {
+          handle: {
+            type: GWP_TYPE,
+            handle: GWP_HANDLE,
+          },
+        },
+      });
+
+      if (result?.errors?.length) {
+        throw new Error(
+          result.errors
+            .map((error) => error.message)
+            .join(" / ")
+        );
+      }
+
+      const metaobject = result?.data?.metaobject;
+
+      if (!metaobject) {
+        setGwp(null);
+        return;
+      }
+
+      setGwp(parseGwp(metaobject));
+    } catch (error) {
+      console.error("fetchGwp error", error);
+      setGwp(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function fetchProductCollections(ids) {
+    setCollectionsLoading(true);
+
+    const query = `
+      query getProductCollections($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on Product {
+            id
+            title
+
+            collections(first: 50) {
+              nodes {
+                id
+                handle
+                title
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    try {
+      const result = await shopify.query(query, {
+        variables: {
+          ids,
+        },
+      });
+
+      if (result?.errors?.length) {
+        throw new Error(
+          result.errors
+            .map((error) => error.message)
+            .join(" / ")
+        );
+      }
+
+      setProductsWithCollections(
+        result?.data?.nodes?.filter(Boolean) || []
+      );
+    } catch (error) {
+      console.error(
+        "fetchProductCollections error",
+        error
+      );
+
+      setProductsWithCollections([]);
+    } finally {
+      setCollectionsLoading(false);
+    }
+  }
+
+  function parseGwp(metaobject) {
+    const fields = getFieldsMap(metaobject.fields);
+
+    const conditionNodes =
+      metaobject.fields.find(
+        (field) => field.key === "conditions"
+      )?.references?.nodes || [];
+
+    return {
+      id: metaobject.id,
+      handle: metaobject.handle,
+      title: fields.title,
+      startDatetime: fields.start_datetime,
+      endDatetime: fields.end_datetime,
+      conditionTypes: parseConditionTypes(
+        fields.condition_type
+      ),
+      conditions: conditionNodes.map(parseCondition),
+    };
+  }
+
+  function parseCondition(metaobject) {
+    const fields = getFieldsMap(metaobject.fields);
+
+    return {
+      id: metaobject.id,
+      handle: metaobject.handle,
+
+      conditionTitle: fields.condition_title,
+      thresholdAmount: fields.threshold_amount,
+      currencyCode: CURRENCY_CODE,
+
+      collection: getReferenceByKey(
+        metaobject.fields,
+        "collection"
+      ),
+
+      collectionOnly:
+        fields.collection_only === "true",
+
+      collectionQuantity:
+        fields.collection_quantity,
+
+      giftProduct: getReferenceByKey(
+        metaobject.fields,
+        "gift_product"
+      ),
+    };
+  }
+
+  function parseConditionTypes(value) {
+    if (!value) return [];
+
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed)
+        ? parsed
+        : [parsed];
+    } catch {
+      return [value];
+    }
+  }
+
+  function getFieldsMap(fields) {
+    return fields.reduce((acc, field) => {
+      acc[field.key] = field.value;
+      return acc;
+    }, {});
+  }
+
+  function getReferenceByKey(fields, key) {
+    const field = fields.find(
+      (item) => item.key === key
+    );
+
+    return (
+      field?.reference ||
+      field?.references?.nodes?.[0] ||
+      null
+    );
+  }
+
+  function isWithinCampaignPeriod(
+    startDatetime,
+    endDatetime
+  ) {
+    const now = new Date();
+
+    if (startDatetime) {
+      const start = new Date(startDatetime);
+
+      if (now < start) {
+        return false;
+      }
+    }
+
+    if (endDatetime) {
+      const end = new Date(endDatetime);
+
+      if (now > end) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function formatMoney(amount) {
+    return `¥${Math.floor(amount).toLocaleString(
+      "ja-JP"
+    )}`;
+  }
 
   if (loading || collectionsLoading) return null;
   if (!gwp) return null;

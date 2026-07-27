@@ -49,7 +49,7 @@ function getLineActualAmount(line) {
 
 // ── 세트(번들) 그룹 ID 추출 ──────────────────────────────
 function getBundleGroupId(line) {
-  const value = line?.attribute?.value;
+  const value = line?.partOf?.value; // attribute → partOf로 수정
   if (!value) return null;
 
   const match = value.match(/\(group\s+([^)]+)\)/);
