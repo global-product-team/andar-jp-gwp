@@ -11,23 +11,71 @@ const EGIFT_PRODUCT_ID = "";
 
 const GWP_CONDITIONS = [
   {
-    thresholdAmount: 20000,
+    // thresholdAmount: 20000,
     collectionId: "gid://shopify/Collection/492844744950",
-    collectionQuantity: 1,
-    collectionOnly: true,
+    collectionQuantity: 3,
+    // collectionOnly: false,
     giftProductId: "gid://shopify/Product/8831087837430",
   },
   {
-    thresholdAmount: 19000,
+    // thresholdAmount: 20000,
     collectionId: "gid://shopify/Collection/485328355574",
-    collectionQuantity: 1,
-    collectionOnly: true,
+    collectionQuantity: 2,
+    // collectionOnly: false,
     giftProductId: "gid://shopify/Product/9033242575094",
+  },
+  
+  
+  {
+    // thresholdAmount: 80000,
+    collectionId: "gid://shopify/Collection/492844744950",
+    collectionQuantity: 2,
+    // collectionOnly: true,
+    giftProductId: "gid://shopify/Product/9405285236982",
   },
 ];
 
 const ERROR_MESSAGE = "決済前に、プレゼントを[Add]で追加してください。";
   
+
+// ── 라인 실지불 금액 계산 ──────────────────────────────
+function getLineActualAmount(line) {
+  const subtotal = Number(line?.cost?.subtotalAmount?.amount || 0);
+  const discounted = (line?.discountAllocations || []).reduce(
+    (sum, d) => sum + Number(d?.discountedAmount?.amount || 0),
+    0
+  );
+  return subtotal - discounted;
+}
+
+// ── 세트(번들) 그룹 ID 추출 ──────────────────────────────
+function getBundleGroupId(line) {
+  const value = line?.partOf?.value; // attribute → partOf로 수정
+  if (!value) return null;
+
+  const match = value.match(/\(group\s+([^)]+)\)/);
+  return match ? match[1].trim() : null;
+}
+
+// ── 세트는 1개, 단품은 quantity 그대로 합산 ───────────────
+function getEffectiveQuantity(lines) {
+  const seenGroupIds = new Set();
+  let total = 0;
+
+  for (const line of lines) {
+    const groupId = getBundleGroupId(line);
+    if (groupId) {
+      if (!seenGroupIds.has(groupId)) {
+        seenGroupIds.add(groupId);
+        total += 1;
+      }
+    } else {
+      total += Number(line.quantity || 0);
+    }
+  }
+
+  return total;
+}
 
 export function cartValidationsGenerateRun(input) {
   const step = input.buyerJourney?.step;
@@ -38,14 +86,14 @@ export function cartValidationsGenerateRun(input) {
   }
 
   // 테스트 고객만 validation 동작
-  const tagResults = input?.cart?.buyerIdentity?.customer?.hasTags ?? [];
-  const isTestCustomer = tagResults.some(
-    (tag) => tag?.tag === "gwp-test" && tag?.hasTag === true
-  );
+  // const tagResults = input?.cart?.buyerIdentity?.customer?.hasTags ?? [];
+  // const isTestCustomer = tagResults.some(
+  //   (tag) => tag?.tag === "gwp-test" && tag?.hasTag === true
+  // );
 
-  if (!isTestCustomer) {
-    return { operations: [{ validationAdd: { errors: [] } }] };
-  }
+  // if (!isTestCustomer) {
+  //   return { operations: [{ validationAdd: { errors: [] } }] };
+  // }
 
   // ── 메타오브젝트에서 conditionTypes, 캠페인 기간 읽기 ────────
 
@@ -57,7 +105,7 @@ export function cartValidationsGenerateRun(input) {
 
   const conditionTypes = parseConditionTypes(metaobject?.condition_type?.value);
 
-  if (!conditionTypes.length) {
+  if (!conditionTypes.includes("collection")) {
     return { operations: [{ validationAdd: { errors: [] } }] };
   }
 
@@ -77,7 +125,7 @@ export function cartValidationsGenerateRun(input) {
     if (line?.merchandise?.__typename !== "ProductVariant") return sum;
     if (line?.merchandise?.product?.id !== EGIFT_PRODUCT_ID) return sum;
 
-    return sum + Number(line?.cost?.totalAmount?.amount || 0);
+     return sum + getLineActualAmount(line);
   }, 0);
 
   const totalAmount = cartTotalAmount - eGiftAmount;
@@ -120,17 +168,15 @@ export function cartValidationsGenerateRun(input) {
         );
       });
 
-      const collectionQty = collectionLines.reduce((sum, line) => {
-        return sum + Number(line.quantity || 0);
-      }, 0);
+      const collectionQty = getEffectiveQuantity(collectionLines); // 기존 reduce 대체
 
       if (collectionQty < (condition.collectionQuantity || 1)) {
         return false;
       }
 
       if (condition.collectionOnly) {
-        const collectionAmount = collectionLines.reduce((sum, line) => {
-          return sum + Number(line?.cost?.totalAmount?.amount || 0);
+         const collectionAmount = collectionLines.reduce((sum, line) => {
+          return sum + getLineActualAmount(line);
         }, 0);
 
         return collectionAmount >= (condition.thresholdAmount || 0);
@@ -157,9 +203,7 @@ export function cartValidationsGenerateRun(input) {
 
   const hasGift = cartProductIds.includes(eligibleCondition.giftProductId);
 
-  const errors = hasGift
-    ? []
-    : [{ message: ERROR_MESSAGE, target: "$.cart" }];
+   const errors = hasGift ? [] : [{ message: ERROR_MESSAGE, target: "$.cart" }];
 
   return { operations: [{ validationAdd: { errors } }] };
 }
