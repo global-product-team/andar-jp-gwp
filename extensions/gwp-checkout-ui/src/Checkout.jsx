@@ -166,55 +166,24 @@ function Extension() {
   function isProductConditionMatched(condition) {
     if (!condition.product?.id) return false;
 
-    // 1차: product id 직접 매칭 (단품일 경우 이걸로 잡힘)
-    const productLinesById = cartLines.filter(
-      (line) => line?.merchandise?.product?.id === condition.product.id
-    );
-
-    // 2차: id 매칭이 없으면 번들 타이틀 텍스트로 폴백 매칭
-    const productLinesByBundleTitle = cartLines.filter((line) => {
-      const bundleTitle = getBundleTitle(line);
-      return bundleTitle && condition.product.title && bundleTitle === condition.product.title;
+    // 1차: id 매칭, 단 세트 구성품은 제외 (단품 전용 매칭)
+    const linesById = cartLines.filter((line) => {
+      if (line?.merchandise?.product?.id !== condition.product.id) return false;
+      const isPartOfBundle = !!getBundleGroupId(line);
+      return !isPartOfBundle;
     });
 
-    const productLines = productLinesById.length
-      ? productLinesById
-      : productLinesByBundleTitle;
+    let productLines = linesById;
+
+    // 2차: id 매칭 결과가 없으면 (=조건이 세트 자체를 가리켜 카트에 그 id가 없는 경우) 타이틀 폴백
+    if (!productLines.length && condition.product.title) {
+      productLines = cartLines.filter((line) => {
+        const bundleTitle = getBundleTitle(line);
+        return bundleTitle && bundleTitle === condition.product.title;
+      });
+    }
 
     const productQuantity = getEffectiveQuantity(productLines);
-
-    console.log("[GWP DEBUG] 타이틀 매칭 확인", cartLines.map(line => {
-      const bundleTitle = getBundleTitle(line);
-      return {
-        productId: line?.merchandise?.product?.id,
-        bundleTitle,
-        bundleTitleLength: bundleTitle?.length,
-      };
-    }).filter(item => item.bundleTitle)); // 번들인 라인만
-
-    console.log("[GWP DEBUG] condition.product 정보", conditions.map(c => ({
-      conditionTitle: c.conditionTitle,
-      productId: c.product?.id,
-      productTitle: c.product?.title,
-      productTitleLength: c.product?.title?.length,
-    })));
-
-    const bundleLine = cartLines.find(l => (l.attributes || []).some(a => a.key === "Part of"));
-    const bundleTitle = getBundleTitle(bundleLine);
-    const conditionTitle = conditions[0]?.product?.title;
-    console.log("[GWP DEBUG] 정확한 문자열 비교", {
-      bundleTitle: JSON.stringify(bundleTitle),
-      conditionTitle: JSON.stringify(conditionTitle),
-      isEqual: bundleTitle === conditionTitle,
-      bundleTitleLength: bundleTitle?.length,
-      conditionTitleLength: conditionTitle?.length,
-    });
-
-    if (bundleLine) {
-      const partOfAttr = bundleLine.attributes.find(a => a.key === "Part of");
-      console.log("[GWP DEBUG] 실제 Part of 원본값 (JSON)", JSON.stringify(partOfAttr.value));
-      console.log("[GWP DEBUG] getBundleTitle 함수 직접 호출 결과", getBundleTitle(bundleLine));
-    }
 
     return productQuantity >= Number(condition.productQuantity || 1);
   }

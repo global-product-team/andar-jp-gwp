@@ -283,9 +283,13 @@ function DebugExtension() {
   // ── 조건별 판정 (gwp-checkout-ui의 isConditionMatched 로직과 1:1 동기화) ──
   const conditionDebugRows = useMemo(() => {
     return conditions.map((condition) => {
-      // -- product 조건 (id 매칭 우선, 안 되면 번들 타이틀 폴백) --
+      // -- product 조건 (id 매칭 우선, 단 세트 구성품 제외 / 안 되면 번들 타이틀 폴백) --
       const productLinesById = condition.product?.id
-        ? cartLines.filter((line) => line?.merchandise?.product?.id === condition.product.id)
+        ? cartLines.filter((line) => {
+            if (line?.merchandise?.product?.id !== condition.product.id) return false;
+            const isPartOfBundle = !!getBundleGroupId(line);
+            return !isPartOfBundle; // 세트 구성품이면 제외
+          })
         : [];
 
       const productLinesByBundleTitle = condition.product?.title
@@ -299,7 +303,7 @@ function DebugExtension() {
         ? productLinesById
         : productLinesByBundleTitle;
 
-      const matchedProductQty = getEffectiveQuantity(productLines); // reduce 대체
+      const matchedProductQty = getEffectiveQuantity(productLines);
 
       const productOk =
         !conditionTypes.includes("product") ||
@@ -447,7 +451,7 @@ function DebugExtension() {
       <s-summary size="medium" emphasis="bold">🛠 GWP Debug</s-summary>
       <s-box background="subdued" borderRadius="base" borderWidth="base" padding="base" inlineSize="fill">
         <s-stack gap="small-100">
-          <s-text>version: 2026-07-22-01</s-text>
+          <s-text>version: 2026-07-31</s-text>
 
           <s-text emphasis="bold">── Campaign ──</s-text>
           <s-text>campaignActive: {String(campaignActive)}</s-text>

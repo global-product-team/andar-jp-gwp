@@ -6,7 +6,7 @@ query CartValidationsGenerateRunInput {
     localTime {
       isCampaignPeriod: dateTimeBetween(
         startDateTime: "2026-07-01T16:20:00"
-        endDateTime: "2026-07-28T07:00:00"
+        endDateTime: "2026-07-31T07:00:00"
       )
     }
     metaobject(

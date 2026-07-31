@@ -4,10 +4,18 @@ const EGIFT_PRODUCT_ID = "";
 
 const GWP_CONDITIONS = [
   {
-    thresholdAmount: 60000,
+    // thresholdAmount: 60000,
+    productId: "",
     productTitle: "[3 SET] NEW andar オールデイフィット冷感ブラ",
-    productQuantity: 2,
+    productQuantity: 3,
     giftProductId: "gid://shopify/Product/9405285236982",
+  },
+  {
+    // thresholdAmount: 25000,
+    productId: "gid://shopify/Product/8493669187830",
+    productTitle: "airyfit ワイドパンツ",
+    productQuantity: 3,
+    giftProductId: "gid://shopify/Product/8831087837430",
   },
 ];
 
@@ -61,15 +69,20 @@ function getEffectiveQuantity(lines) {
 }
 
 function getProductLines(cartLines, condition) {
-  const linesById = condition.productId
-    ? cartLines.filter((line) => {
-        if (line?.merchandise?.__typename !== "ProductVariant") return false;
-        return line?.merchandise?.product?.id === condition.productId;
-      })
-    : [];
+  if (condition.productId) {
+    return cartLines.filter((line) => {
+      if (line?.merchandise?.__typename !== "ProductVariant") return false;
+      if (line?.merchandise?.product?.id !== condition.productId) return false;
 
-  if (linesById.length) return linesById;
+      // 세트 구성품이면 단품 조건 매칭에서 제외
+      const isPartOfBundle = !!getBundleGroupId(line);
+      if (isPartOfBundle) return false;
 
+      return true;
+    });
+  }
+
+  // productId가 빈 문자열이거나 없으면 (세트 전용 조건) 타이틀 매칭
   return cartLines.filter((line) => {
     if (line?.merchandise?.__typename !== "ProductVariant") return false;
     const bundleTitle = getBundleTitle(line);
@@ -85,14 +98,15 @@ export function cartValidationsGenerateRun(input) {
     return { operations: [{ validationAdd: { errors: [] } }] };
   }
 
-  const tagResults = input?.cart?.buyerIdentity?.customer?.hasTags ?? [];
-  const isTestCustomer = tagResults.some(
-    (tag) => tag?.tag === "gwp-test" && tag?.hasTag === true
-  );
+  // 테스트 고객만 validation 동작
+  // const tagResults = input?.cart?.buyerIdentity?.customer?.hasTags ?? [];
+  // const isTestCustomer = tagResults.some(
+  //   (tag) => tag?.tag === "gwp-test" && tag?.hasTag === true
+  // );
 
-  if (!isTestCustomer) {
-    return { operations: [{ validationAdd: { errors: [] } }] };
-  }
+  // if (!isTestCustomer) {
+  //   return { operations: [{ validationAdd: { errors: [] } }] };
+  // }
 
   const metaobject = input?.shop?.metaobject;
   if (!metaobject) {
