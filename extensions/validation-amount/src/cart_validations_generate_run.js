@@ -4,14 +4,13 @@ const EGIFT_PRODUCT_ID = "";
 
 const GWP_CONDITIONS = [
   {
-    thresholdAmount: 15000,
-    giftProductId: "gid://shopify/Product/8831087837430",
+    thresholdAmount: 18000,
+    giftProductId: "gid://shopify/Product/9419459264758",
   },
   {
-    thresholdAmount: 40000,
-    giftProductId: "gid://shopify/Product/9033242575094",
+    thresholdAmount: 25000,
+    giftProductId: "gid://shopify/Product/9363745014006",
   },
- 
 ];
 
 const ERROR_MESSAGE =
