@@ -14,7 +14,7 @@ const GWP_CONDITIONS = [
 ];
 
 const ERROR_MESSAGE =
-  "error amount message.";
+  "プレゼントを追加してから決済にお進みください。";
 
 function getLineActualAmount(line) {
   const subtotal = Number(line?.cost?.subtotalAmount?.amount || 0);
